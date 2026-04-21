@@ -1,0 +1,59 @@
+services:
+  db:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    platform: linux/amd64
+    container_name: viral_db
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "${DB_PASSWORD}"
+      MSSQL_PID: "Developer"
+    ports:
+      - "1998:1433"
+    volumes:
+      - mssql_data:/var/opt/mssql
+    healthcheck:
+      test: /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "${DB_PASSWORD}" -Q "SELECT 1" -No -C
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  backend:
+    build: ./backend
+    container_name: viral_backend
+    ports:
+      - "1997:1997"
+    env_file: ./backend/.env
+    environment:
+      DB_SERVER: db
+      DB_PORT: 1433
+      DEFAULT_SUPERADMIN_USERNAME: "${DEFAULT_SUPERADMIN_USERNAME}"
+      DEFAULT_SUPERADMIN_PASSWORD: "${DEFAULT_SUPERADMIN_PASSWORD}"
+      SCHEDULER_URL: "http://scheduler:5050"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build: ./frontend
+    container_name: viral_frontend
+    ports:
+      - "1996:80"
+    depends_on:
+      - backend
+
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: viral_scheduler
+    env_file: .env
+    environment:
+      BACKEND_BASE_URL: http://backend:1997
+      SYNC_INTERVAL_MINUTES: "${SYNC_INTERVAL_MINUTES:-20}"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  mssql_data:

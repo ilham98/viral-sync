@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+venv/
+.env
+*.log
+
+# Node
+node_modules/
+dist/
+.env
+
+# macOS
+.DS_Store
+
+# Local env files (use .env.example as template)
+backend/.env
+.env
