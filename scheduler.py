@@ -58,14 +58,16 @@ def start_trigger_server():
     server.serve_forever()
 
 
+SCHEDULED_TIMES = ["08:00", "18:00", "20:00", "21:00", "22:00"]
+
+
 def main():
     threading.Thread(target=start_trigger_server, daemon=True).start()
 
-    interval = int(os.getenv("SYNC_INTERVAL_MINUTES", "20"))
-    logging.info("Scheduler started — running every %d minute(s)", interval)
-    send_request()  # Run immediately on start
+    logging.info("Scheduler started — daily runs at: %s", ", ".join(SCHEDULED_TIMES))
 
-    schedule.every(interval).minutes.do(send_request)
+    for t in SCHEDULED_TIMES:
+        schedule.every().day.at(t).do(send_request)
 
     while True:
         schedule.run_pending()
