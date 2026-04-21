@@ -29,15 +29,42 @@ router.post('/', requireAuth, async (req, res) => {
 
   try {
     const pool = await getPool();
-    const result = await pool
+
+    // Check if a soft-deleted record already exists for this athlete_id
+    const existing = await pool
       .request()
       .input('athlete_id', sql.NVarChar(50), athlete_id.trim())
-      .input('label', sql.NVarChar(100), label?.trim() || null)
-      .query(`
-        INSERT INTO athletes (athlete_id, label)
-        OUTPUT INSERTED.id, INSERTED.athlete_id, INSERTED.label, INSERTED.created_at
-        VALUES (@athlete_id, @label)
-      `);
+      .query('SELECT id FROM athletes WHERE athlete_id = @athlete_id AND active = 0');
+
+    let result;
+    if (existing.recordset.length > 0) {
+      // Reactivate the soft-deleted record
+      result = await pool
+        .request()
+        .input('athlete_id', sql.NVarChar(50), athlete_id.trim())
+        .input('label', sql.NVarChar(100), label?.trim() || null)
+        .query(`
+          UPDATE athletes SET active = 1, label = @label
+          OUTPUT INSERTED.id, INSERTED.athlete_id, INSERTED.label, INSERTED.created_at
+          WHERE athlete_id = @athlete_id AND active = 0
+        `);
+    } else {
+      result = await pool
+        .request()
+        .input('athlete_id', sql.NVarChar(50), athlete_id.trim())
+        .input('label', sql.NVarChar(100), label?.trim() || null)
+        .query(`
+          INSERT INTO athletes (athlete_id, label)
+          OUTPUT INSERTED.id, INSERTED.athlete_id, INSERTED.label, INSERTED.created_at
+          VALUES (@athlete_id, @label)
+        `);
+    }
+
+    // If athlete_id already exists and is active, 409
+    if (!result.recordset || result.recordset.length === 0) {
+      return res.status(409).json({ error: 'Athlete ID already exists' });
+    }
+
     res.status(201).json(result.recordset[0]);
   } catch (err) {
     if (err.number === 2627) return res.status(409).json({ error: 'Athlete ID already exists' });
