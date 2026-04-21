@@ -73,6 +73,38 @@ router.post('/', requireAuth, async (req, res) => {
   }
 });
 
+// PUT /api/athletes/:id  { athlete_id, label }
+router.put('/:id', requireAuth, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) return res.status(400).json({ error: 'Invalid id' });
+
+  const { athlete_id, label } = req.body;
+  if (!athlete_id) return res.status(400).json({ error: 'athlete_id is required' });
+
+  try {
+    const pool = await getPool();
+    const result = await pool
+      .request()
+      .input('id', sql.Int, id)
+      .input('athlete_id', sql.NVarChar(50), athlete_id.trim())
+      .input('label', sql.NVarChar(100), label?.trim() || null)
+      .query(`
+        UPDATE athletes SET athlete_id = @athlete_id, label = @label
+        OUTPUT INSERTED.id, INSERTED.athlete_id, INSERTED.label, INSERTED.created_at
+        WHERE id = @id AND active = 1
+      `);
+
+    if (!result.recordset || result.recordset.length === 0)
+      return res.status(404).json({ error: 'Not found' });
+
+    res.json(result.recordset[0]);
+  } catch (err) {
+    if (err.number === 2627) return res.status(409).json({ error: 'Athlete ID already exists' });
+    console.error(err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // DELETE /api/athletes/:id  (soft delete)
 router.delete('/:id', requireAuth, async (req, res) => {
   const id = parseInt(req.params.id, 10);

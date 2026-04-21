@@ -19,6 +19,10 @@ function AthletePanel() {
   const [form, setForm] = useState({ athlete_id: '', label: '' });
   const [error, setError] = useState('');
   const [adding, setAdding] = useState(false);
+  const [editId, setEditId] = useState(null);
+  const [editForm, setEditForm] = useState({ athlete_id: '', label: '' });
+  const [editError, setEditError] = useState('');
+  const [saving, setSaving] = useState(false);
 
   const fetchAthletes = useCallback(async () => {
     setLoading(true);
@@ -56,6 +60,31 @@ function AthletePanel() {
       setAthletes((prev) => prev.filter((a) => a.id !== id));
     } catch (err) {
       alert(err.response?.data?.error || 'Failed to remove athlete');
+    }
+  };
+
+  const startEdit = (a) => {
+    setEditId(a.id);
+    setEditForm({ athlete_id: a.athlete_id, label: a.label || '' });
+    setEditError('');
+  };
+
+  const cancelEdit = () => {
+    setEditId(null);
+    setEditError('');
+  };
+
+  const handleEdit = async (id) => {
+    setEditError('');
+    setSaving(true);
+    try {
+      const { data } = await client.put(`/athletes/${id}`, editForm);
+      setAthletes((prev) => prev.map((a) => (a.id === id ? data : a)));
+      setEditId(null);
+    } catch (err) {
+      setEditError(err.response?.data?.error || 'Failed to save');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -99,18 +128,49 @@ function AthletePanel() {
             </tr>
           </thead>
           <tbody>
-            {athletes.map((a) => (
-              <tr key={a.id}>
-                <td><code>{a.athlete_id}</code></td>
-                <td>{a.label || '—'}</td>
-                <td>{formatDate(a.created_at)}</td>
-                <td>
-                  <button className="btn-delete" onClick={() => handleDelete(a.id)}>
-                    Remove
-                  </button>
-                </td>
-              </tr>
-            ))}
+            {athletes.map((a) =>
+              editId === a.id ? (
+                <tr key={a.id}>
+                  <td>
+                    <input
+                      value={editForm.athlete_id}
+                      onChange={(e) => setEditForm((f) => ({ ...f, athlete_id: e.target.value }))}
+                      style={{ width: '100%' }}
+                    />
+                  </td>
+                  <td>
+                    <input
+                      value={editForm.label}
+                      onChange={(e) => setEditForm((f) => ({ ...f, label: e.target.value }))}
+                      placeholder="Label (optional)"
+                      style={{ width: '100%' }}
+                    />
+                    {editError && <div className="error-msg" style={{ marginTop: '.25rem' }}>{editError}</div>}
+                  </td>
+                  <td>{formatDate(a.created_at)}</td>
+                  <td style={{ whiteSpace: 'nowrap' }}>
+                    <button className="btn-primary" onClick={() => handleEdit(a.id)} disabled={saving} style={{ marginRight: '.4rem' }}>
+                      {saving ? 'Saving…' : 'Save'}
+                    </button>
+                    <button className="btn-delete" onClick={cancelEdit}>Cancel</button>
+                  </td>
+                </tr>
+              ) : (
+                <tr key={a.id}>
+                  <td><code>{a.athlete_id}</code></td>
+                  <td>{a.label || '—'}</td>
+                  <td>{formatDate(a.created_at)}</td>
+                  <td style={{ whiteSpace: 'nowrap' }}>
+                    <button className="btn-primary" onClick={() => startEdit(a)} style={{ marginRight: '.4rem' }}>
+                      Edit
+                    </button>
+                    <button className="btn-delete" onClick={() => handleDelete(a.id)}>
+                      Remove
+                    </button>
+                  </td>
+                </tr>
+              )
+            )}
           </tbody>
         </table>
       )}
