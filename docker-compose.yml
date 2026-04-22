@@ -51,6 +51,7 @@ services:
     environment:
       BACKEND_BASE_URL: http://backend:1997
       SYNC_INTERVAL_MINUTES: "${SYNC_INTERVAL_MINUTES:-20}"
+      TZ: Asia/Makassar
     depends_on:
       - backend
     restart: unless-stopped
