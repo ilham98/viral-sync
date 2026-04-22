@@ -175,6 +175,7 @@ def _sync_one(
     today: str,
     today_iso: str,
 ) -> bool:
+    record_id = _log_sync_start(athlete_id, today_iso)
     payload = {
         "data": (
             f"csrf_test_name={csrf_token}"
@@ -206,11 +207,11 @@ def _sync_one(
             "Athlete %s | http=%s | date=%s | response=%s",
             athlete_id, response.status_code, today, result_text,
         )
-        _log_sync(athlete_id, today_iso, status, result_text)
+        _log_sync_update(record_id, status, result_text)
         return response.ok
     except requests.RequestException as e:
         logger.error("Athlete %s | Request failed: %s", athlete_id, e)
-        _log_sync(athlete_id, today_iso, "failed", str(e))
+        _log_sync_update(record_id, "failed", str(e))
         return False
 
 
@@ -229,14 +230,16 @@ def send_request() -> bool:
     with requests.Session() as session:
         if not login(session):
             for a in athletes:
-                _log_sync(a["athlete_id"], today_iso, "failed", "Login failed")
+                rec = _log_sync_start(a["athlete_id"], today_iso)
+                _log_sync_update(rec, "failed", "Login failed")
             return False
 
         csrf_token = fetch_csrf_token(session)
         if not csrf_token:
             logger.error("Skipping — no CSRF token available")
             for a in athletes:
-                _log_sync(a["athlete_id"], today_iso, "failed", "No CSRF token")
+                rec = _log_sync_start(a["athlete_id"], today_iso)
+                _log_sync_update(rec, "failed", "No CSRF token")
             return False
 
         results = []
