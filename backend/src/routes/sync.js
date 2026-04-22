@@ -51,7 +51,7 @@ router.post('/log', requireApiKey, async (req, res) => {
 
   try {
     const pool = await getPool();
-    await pool
+    const result = await pool
       .request()
       .input('athlete_id', sql.NVarChar(50), athlete_id)
       .input('sync_date', sql.Date, sync_date)
@@ -59,9 +59,35 @@ router.post('/log', requireApiKey, async (req, res) => {
       .input('response', sql.NVarChar(sql.MAX), response || null)
       .query(`
         INSERT INTO sync_history (athlete_id, sync_date, status, response)
+        OUTPUT INSERTED.id
         VALUES (@athlete_id, @sync_date, @status, @response)
       `);
 
+    res.json({ ok: true, id: result.recordset[0].id });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// PATCH /api/sync/log/:id — API key protected, update status/response of an existing record
+router.patch('/log/:id', requireApiKey, async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (isNaN(id)) return res.status(400).json({ error: 'Invalid id' });
+
+  const { status, response } = req.body;
+  if (!status) return res.status(400).json({ error: 'status is required' });
+
+  try {
+    const pool = await getPool();
+    const result = await pool
+      .request()
+      .input('id', sql.Int, id)
+      .input('status', sql.NVarChar(20), status)
+      .input('response', sql.NVarChar(sql.MAX), response || null)
+      .query('UPDATE sync_history SET status = @status, response = @response WHERE id = @id');
+
+    if (result.rowsAffected[0] === 0) return res.status(404).json({ error: 'Not found' });
     res.json({ ok: true });
   } catch (err) {
     console.error(err);

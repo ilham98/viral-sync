@@ -1,5 +1,6 @@
 import os
 import re
+import time
 import logging
 import requests
 from datetime import datetime
@@ -17,6 +18,9 @@ PASSWORD = os.getenv("VIRAL_PASSWORD")
 INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY", "change-this-to-a-random-api-key")
 BACKEND_BASE_URL = os.getenv("BACKEND_BASE_URL", "http://localhost:1997")
 
+MAX_RETRIES = 3
+RETRY_DELAY_SECONDS = 10
+
 BASE_HEADERS = {
     "Accept-Language": "en-US,en;q=0.9,my;q=0.8,eo;q=0.7,ms;q=0.6,zh-CN;q=0.5,zh;q=0.4",
     "Connection": "keep-alive",
@@ -29,17 +33,35 @@ BASE_HEADERS = {
 logger = logging.getLogger(__name__)
 
 
-def _log_sync(athlete_id: str, sync_date: str, status: str, response: str | None) -> None:
-    """Best-effort: POST sync result to the backend for history tracking."""
+def _log_sync_start(athlete_id: str, sync_date: str) -> int | None:
+    """Insert an in_progress record; returns the new row id or None on failure."""
     try:
-        requests.post(
+        resp = requests.post(
             f"{BACKEND_BASE_URL}/api/sync/log",
             headers={"x-api-key": INTERNAL_API_KEY, "Content-Type": "application/json"},
-            json={"athlete_id": athlete_id, "sync_date": sync_date, "status": status, "response": response},
+            json={"athlete_id": athlete_id, "sync_date": sync_date, "status": "in_progress", "response": None},
+            timeout=10,
+        )
+        if resp.ok:
+            return resp.json().get("id")
+    except Exception as exc:
+        logger.warning("Could not log sync start to backend: %s", exc)
+    return None
+
+
+def _log_sync_update(record_id: int | None, status: str, response: str | None) -> None:
+    """Update an existing sync_history row with the final status/response."""
+    if record_id is None:
+        return
+    try:
+        requests.patch(
+            f"{BACKEND_BASE_URL}/api/sync/log/{record_id}",
+            headers={"x-api-key": INTERNAL_API_KEY, "Content-Type": "application/json"},
+            json={"status": status, "response": response},
             timeout=10,
         )
     except Exception as exc:
-        logger.warning("Could not log sync to backend: %s", exc)
+        logger.warning("Could not update sync log in backend: %s", exc)
 
 
 def get_athletes() -> list[dict]:
@@ -217,10 +239,21 @@ def send_request() -> bool:
                 _log_sync(a["athlete_id"], today_iso, "failed", "No CSRF token")
             return False
 
-        results = [
-            _sync_one(session, csrf_token, a["athlete_id"], today, today_iso)
-            for a in athletes
-        ]
+        results = []
+        for a in athletes:
+            athlete_id = a["athlete_id"]
+            success = False
+            for attempt in range(1, MAX_RETRIES + 1):
+                if attempt > 1:
+                    logger.info(
+                        "Athlete %s | retry %d/%d — waiting %ds...",
+                        athlete_id, attempt, MAX_RETRIES, RETRY_DELAY_SECONDS,
+                    )
+                    time.sleep(RETRY_DELAY_SECONDS)
+                success = _sync_one(session, csrf_token, athlete_id, today, today_iso)
+                if success:
+                    break
+            results.append(success)
 
     return all(results)
 
